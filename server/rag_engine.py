@@ -28,21 +28,26 @@ class RAGEngine:
         self.db = VectorDatabaseManager()
         self.client = client
     
-    def query(self, query: str, top_k: int = 5) -> Dict:
-        """
-        Process a query and return results
-        
-        Args:
-            query: User query
-            top_k: Number of relevant documents to retrieve
-            
-        Returns:
-            Dictionary with query results
-        """
+    def query(self, query: str, top_k: int = 5, document_ids: Optional[List[str]] = None) -> Dict:
+
         start_time = time.time()
         
-        # Retrieve relevant documents
-        retrieved_docs = self.db.search(query, top_k=top_k)
+        # If specific document IDs are provided, use those
+        if document_ids:
+            retrieved_docs = []
+            for doc_id in document_ids:
+                doc = self.db.get_document_by_id(doc_id)
+                if doc:
+                    # Convert to the format expected by _build_context
+                    retrieved_docs.append({
+                        "text": doc.get("text", ""),
+                        "filename": doc.get("metadata", {}).get("filename", "unknown"),
+                        "source": doc.get("metadata", {}).get("source", "unknown"),
+                        "metadata": doc.get("metadata", {})
+                    })
+        else:
+            # Retrieve relevant documents using semantic search
+            retrieved_docs = self.db.search(query, top_k=top_k)
         
         if not retrieved_docs:
             return {
@@ -83,16 +88,7 @@ class RAGEngine:
         }
     
     def summarize(self, document_ids: List[str], summary_type: str = "comparative") -> Dict:
-        """
-        Summarize or compare documents
-        
-        Args:
-            document_ids: List of document IDs to summarize
-            summary_type: Type of summary ("comparative", "extractive", "abstractive")
-            
-        Returns:
-            Dictionary with summary results
-        """
+
         documents = []
         for doc_id in document_ids:
             doc = self.db.get_document_by_id(doc_id)
@@ -187,7 +183,7 @@ Provide a structured comparison:"""
         return prompt
     
     def _build_summary_prompt(self, documents: List[Dict], summary_type: str) -> str:
-        """Build prompt for document summarization"""
+        
         doc_text = "\n\n".join([doc.get("text", "") for doc in documents])
         
         if summary_type == "extractive":

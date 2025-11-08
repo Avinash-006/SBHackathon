@@ -8,6 +8,7 @@ import platform
 import subprocess
 import smtplib
 import ssl
+import socket
 import re
 from difflib import SequenceMatcher
 from datetime import datetime
@@ -108,6 +109,15 @@ def parse_query_intent(query: str) -> Dict[str, any]:
     summarize_keywords = ["summarize", "summary", "summarise", "brief", "overview"]
     if any(keyword in query_lower for keyword in summarize_keywords):
         result["intent"] = "summarize"
+        # Try to extract document name from summarize query (e.g., "summarize contract.pdf")
+        doc_name = query
+        for keyword in summarize_keywords:
+            doc_name = re.sub(rf'\b{keyword}\b', '', doc_name, flags=re.IGNORECASE)
+        # Remove common words
+        doc_name = re.sub(r'\b(all|the|documents|document|files|file)\b', '', doc_name, flags=re.IGNORECASE)
+        doc_name = doc_name.strip(' ,.')
+        if doc_name:
+            result["document_name"] = doc_name
     
     return result
 
@@ -381,37 +391,60 @@ def open_file_location(file_path: Path):
         st.error(f"Error opening file location: {str(e)}")
 
 
-def index_folder(folder_path: str, db: VectorDatabaseManager) -> int:
-    """Index all documents in the folder"""
-    documents = {}
-    count = 0
+def index_folder(folder_path: str, db: VectorDatabaseManager, force_reindex: bool = False) -> int:
+    """
+    Index all documents in the folder.
+    Uses session state to track if folder is already indexed to avoid re-indexing.
     
-    folder = Path(folder_path)
-    if not folder.exists():
-        st.error(f"Folder not found: {folder_path}")
-        return 0
+    Args:
+        folder_path: Path to folder to index
+        db: VectorDatabaseManager instance
+        force_reindex: If True, re-index even if already indexed
     
-    for file_path in folder.rglob("*"):
-        if should_ignore_path(file_path):
-            continue
-        if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_SUFFIXES:
-            content = extract_text(file_path)
-            if content.strip():
-                doc_id = str(file_path).replace("\\", "_").replace("/", "_")
-                documents[doc_id] = {
-                    "content": content,
-                    "metadata": {
-                        "filename": file_path.name,
-                        "source": str(file_path),
-                        "type": file_path.suffix[1:].lower()
+    Returns:
+        Number of documents indexed
+    """
+    # Check if already indexed (using session state)
+    index_key = f"indexed_folder_{folder_path}"
+    if not force_reindex and index_key in st.session_state:
+        if st.session_state[index_key] == folder_path:
+            # Already indexed, just return count without showing message
+            all_doc_ids = db.get_all_document_ids()
+            return len(all_doc_ids) if all_doc_ids else 0
+    
+    # Show indexing message only when actually indexing
+    with st.spinner("📊 Indexing documents..."):
+        documents = {}
+        count = 0
+        
+        folder = Path(folder_path)
+        if not folder.exists():
+            st.error(f"Folder not found: {folder_path}")
+            return 0
+        
+        for file_path in folder.rglob("*"):
+            if should_ignore_path(file_path):
+                continue
+            if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_SUFFIXES:
+                content = extract_text(file_path)
+                if content.strip():
+                    doc_id = str(file_path).replace("\\", "_").replace("/", "_")
+                    documents[doc_id] = {
+                        "content": content,
+                        "metadata": {
+                            "filename": file_path.name,
+                            "source": str(file_path),
+                            "type": file_path.suffix[1:].lower()
+                        }
                     }
-                }
-                count += 1
-    
-    if documents:
-        db.add_documents(documents)
-    
-    return count
+                    count += 1
+        
+        if documents:
+            db.add_documents(documents)
+            # Mark as indexed in session state
+            st.session_state[index_key] = folder_path
+        
+        return count
 
 
 def send_email_with_file(
@@ -480,14 +513,19 @@ def send_email_with_file(
 
         context = ssl.create_default_context()
         port = int(smtp_port)
+        # Get timeout from env (default 30 seconds)
+        timeout = get_env_int("SMTP_TIMEOUT", 30)
+        
+        # Set socket default timeout for better network handling
+        socket.setdefaulttimeout(timeout)
 
         if use_starttls:
-            with smtplib.SMTP(smtp_server, port) as server:
+            with smtplib.SMTP(smtp_server, port, timeout=timeout) as server:
                 server.starttls(context=context)
                 server.login(sender_email, sender_password)
                 server.send_message(msg)
         else:
-            with smtplib.SMTP_SSL(smtp_server, port, context=context) as server:
+            with smtplib.SMTP_SSL(smtp_server, port, context=context, timeout=timeout) as server:
                 server.login(sender_email, sender_password)
                 server.send_message(msg)
 
@@ -497,8 +535,11 @@ def send_email_with_file(
         return False, "Authentication failed. Please verify your email credentials or app password."
     except FileNotFoundError:
         return False, f"File not found: {file_path}"
-    except smtplib.SMTPException as ex:
-        return False, f"Failed to send email: {str(ex)}"
+    except (smtplib.SMTPException, OSError, TimeoutError) as ex:
+        error_msg = str(ex)
+        if "10060" in error_msg or "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+            return False, f"Connection timeout. Please check your network connection. If using WiFi, try switching to ethernet or check firewall settings. Error: {error_msg}"
+        return False, f"Failed to send email: {error_msg}"
     except Exception as ex:
         return False, f"Unexpected error: {str(ex)}"
 
@@ -609,17 +650,12 @@ if st.session_state["ui_mode"] == "simplified":
                     recipient_email = intent_data.get("email")
                     document_name = intent_data.get("document_name")
                     
-                    # Index documents first to ensure we have all files available
-                    st.info("📊 Indexing documents from folder...")
-                    db = VectorDatabaseManager()
-                    docs_indexed = index_folder(folder_path, db)
+                    # For email, we don't need to index - just find the file
+                    available_files = list_supported_files(folder_path)
                     
-                    if docs_indexed == 0:
+                    if not available_files:
                         st.error("No supported documents found in the folder!")
                     else:
-                        st.success(f"✅ Indexed {docs_indexed} document(s)")
-                        
-                        available_files = list_supported_files(folder_path)
                         
                         # Try to find the specific file mentioned in query
                         selected_file = None
@@ -732,47 +768,187 @@ if st.session_state["ui_mode"] == "simplified":
                 
                 elif intent == "summarize":
                     # Handle summarize intent
-                    st.info("📊 Indexing documents for summarization...")
+                    document_name = intent_data.get("document_name")
+                    
                     db = VectorDatabaseManager()
+                    # Index documents (will skip if already indexed)
                     docs_indexed = index_folder(folder_path, db)
                     
                     if docs_indexed == 0:
                         st.error("No documents found in the specified folder!")
                     else:
-                        st.info("🤖 Generating summary...")
                         rag = RAGEngine()
-                        # Get all document IDs and summarize
-                        result = rag.query(user_query, top_k=min(10, docs_indexed))
-                        st.success("✅ Summary Complete!")
-                        st.markdown("### 📊 Summary")
-                        st.write(result.get("summary", "No summary available"))
-                        if result.get("documents_found"):
-                            st.markdown("#### Documents Analyzed")
-                            for doc in result["documents_found"]:
-                                st.write(f"- {doc}")
+                        doc_ids_to_summarize = []
+                        
+                        if document_name:
+                            # User specified a document to summarize
+                            st.info(f"🔍 Searching for '{document_name}'...")
+                            results, suggestions = find_documents(folder_path, document_name)
+                            
+                            if results:
+                                # Found exact match(es)
+                                for file_path in results:
+                                    # Convert file path to doc_id format
+                                    doc_id = str(file_path).replace("\\", "_").replace("/", "_")
+                                    # Check if this doc_id exists in the database
+                                    all_doc_ids = db.get_all_document_ids()
+                                    # Find matching doc_id (might have chunks)
+                                    matching_ids = [did for did in all_doc_ids if doc_id in did or did in doc_id]
+                                    if matching_ids:
+                                        # Use the base doc_id (without chunk suffix)
+                                        base_doc_id = doc_id
+                                        if base_doc_id not in doc_ids_to_summarize:
+                                            doc_ids_to_summarize.append(base_doc_id)
+                                
+                                if doc_ids_to_summarize:
+                                    st.success(f"📎 Found {len(doc_ids_to_summarize)} document(s) to summarize")
+                                else:
+                                    st.warning(f"⚠️ Found file(s) but couldn't match with database. Trying to find by filename...")
+                                    # Try alternative: search by filename in doc_ids
+                                    for file_path in results:
+                                        filename = file_path.name
+                                        all_doc_ids = db.get_all_document_ids()
+                                        for doc_id in all_doc_ids:
+                                            doc = db.get_document_by_id(doc_id)
+                                            if doc and doc.get("metadata"):
+                                                if doc["metadata"].get("filename") == filename:
+                                                    if doc_id not in doc_ids_to_summarize:
+                                                        doc_ids_to_summarize.append(doc_id)
+                                                    break
+                            elif suggestions:
+                                # Use the most similar suggestion
+                                file_path = suggestions[0][0]
+                                filename = file_path.name
+                                st.info(f"📎 Using closest match: {filename}")
+                                all_doc_ids = db.get_all_document_ids()
+                                for doc_id in all_doc_ids:
+                                    doc = db.get_document_by_id(doc_id)
+                                    if doc and doc.get("metadata"):
+                                        if doc["metadata"].get("filename") == filename:
+                                            doc_ids_to_summarize.append(doc_id)
+                                            break
+                            else:
+                                st.error(f"❌ Could not find document matching '{document_name}'")
+                                st.info("💡 Available documents in folder:")
+                                available_files = list_supported_files(folder_path)
+                                for idx, file_path in enumerate(available_files[:10], 1):
+                                    st.write(f"{idx}. {file_path.name}")
+                        else:
+                            # No specific document mentioned - summarize all
+                            st.info("🤖 Generating summary of all documents...")
+                            all_doc_ids = db.get_all_document_ids()
+                            doc_ids_to_summarize = all_doc_ids
+                        
+                        if doc_ids_to_summarize:
+                            st.info(f"📄 Analyzing {len(doc_ids_to_summarize)} document(s)...")
+                            # Summarize specified documents
+                            result = rag.summarize(doc_ids_to_summarize, summary_type="abstractive")
+                            
+                            if result.get("status") == "success":
+                                summary_title = f"Summary of {len(doc_ids_to_summarize)} Document(s)" if document_name else "Summary of All Documents"
+                                st.success("✅ Summary Complete!")
+                                st.markdown(f"### 📊 {summary_title}")
+                                st.write(result.get("summary", "No summary available"))
+                            else:
+                                st.error(f"Error generating summary: {result.get('message', 'Unknown error')}")
+                        else:
+                            st.error("No documents found to summarize.")
                 
                 else:
                     # Default: RAG query
-                    st.info("📊 Indexing documents...")
                     db = VectorDatabaseManager()
+                    # Index documents (will skip if already indexed)
                     docs_indexed = index_folder(folder_path, db)
                     
                     if docs_indexed == 0:
                         st.error("No documents found in the specified folder!")
                     else:
-                        st.info("🤖 Analyzing documents with AI...")
                         rag = RAGEngine()
-                        result = rag.query(user_query)
+                        doc_ids_to_query = None
+                        
+                        # Check if query mentions a specific document (e.g., "explain project1.pdf" or "explain project1")
+                        # Try to extract document name from query
+                        query_lower = user_query.lower()
+                        
+                        # Pattern to match filenames (with extensions)
+                        filename_pattern = r'\b[\w\-_]+\.(pdf|docx|txt|doc)\b'
+                        filenames = re.findall(filename_pattern, user_query, re.IGNORECASE)
+                        
+                        # Also try to extract potential document names without extensions
+                        # Look for words that might be document names (after common verbs like explain, what, tell, etc.)
+                        doc_name = None
+                        if filenames:
+                            # Found a filename with extension
+                            filename_match = re.search(r'\b([\w\-_]+\.(?:pdf|docx|txt|doc))\b', user_query, re.IGNORECASE)
+                            if filename_match:
+                                doc_name = filename_match.group(1)
+                        else:
+                            # Try to extract potential document name (word after common query verbs)
+                            # Remove common query words
+                            query_words = re.sub(r'\b(explain|what|is|tell|me|about|describe|show|the|a|an)\b', '', query_lower, flags=re.IGNORECASE)
+                            query_words = query_words.strip()
+                            # Take the first significant word/phrase (up to 2 words)
+                            words = query_words.split()
+                            if words:
+                                # Take first 1-2 words as potential document name
+                                potential_name = ' '.join(words[:2]).strip(' ,.')
+                                if len(potential_name) > 2:  # Only if it's a meaningful name
+                                    doc_name = potential_name
+                        
+                        if doc_name:
+                            st.info(f"🔍 Searching for document: {doc_name}")
+                            
+                            # Search for the document in the folder (with fuzzy matching)
+                            results, suggestions = find_documents(folder_path, doc_name)
+                            
+                            # Use suggestions if no exact match found (handles spelling errors)
+                            if not results and suggestions:
+                                # Use the most similar suggestion (fuzzy match)
+                                file_path = suggestions[0][0]
+                                filename_only = file_path.name
+                                similarity_score = suggestions[0][1]
+                                if similarity_score >= 0.5:  # Only use if reasonably similar
+                                    st.info(f"📎 Found closest match: {filename_only} (similarity: {int(similarity_score * 100)}%)")
+                                    results = [file_path]
+                            
+                            if results:
+                                # Found the document, get its doc_id
+                                doc_ids_to_query = []
+                                for file_path in results:
+                                    doc_id = str(file_path).replace("\\", "_").replace("/", "_")
+                                    # Check if this doc_id exists in the database
+                                    all_doc_ids = db.get_all_document_ids()
+                                    # Find matching doc_id
+                                    matching_ids = [did for did in all_doc_ids if doc_id == did or did.startswith(doc_id + "_chunk")]
+                                    if matching_ids:
+                                        # Use the base doc_id (without chunk suffix)
+                                        base_doc_id = doc_id
+                                        if base_doc_id not in doc_ids_to_query:
+                                            doc_ids_to_query.append(base_doc_id)
+                                
+                                if not doc_ids_to_query:
+                                    # Try alternative: search by filename in doc_ids
+                                    for file_path in results:
+                                        filename_only = file_path.name
+                                        all_doc_ids = db.get_all_document_ids()
+                                        for doc_id in all_doc_ids:
+                                            doc = db.get_document_by_id(doc_id)
+                                            if doc and doc.get("metadata"):
+                                                if doc["metadata"].get("filename") == filename_only:
+                                                    if doc_id not in doc_ids_to_query:
+                                                        doc_ids_to_query.append(doc_id)
+                                                    break
+                                
+                                if doc_ids_to_query:
+                                    st.success(f"📎 Using document: {results[0].name}")
+                        
+                        st.info("🤖 Analyzing documents with AI...")
+                        result = rag.query(user_query, document_ids=doc_ids_to_query)
                         
                         st.success("✅ Analysis Complete!")
                         st.markdown("### 📊 Results")
                         st.markdown("#### Summary")
                         st.write(result.get("summary", "No summary available"))
-                        
-                        if result.get("documents_found"):
-                            st.markdown("#### Documents Found")
-                            for doc in result["documents_found"]:
-                                st.write(f"- {doc}")
     
     st.markdown("---")
     st.info("💡 **Tips:**\n- Say 'send mail to email@example.com' to email documents\n- Say 'search for filename' to find documents\n- Say 'summarize' to get document summaries\n- Ask any question about your documents!")
@@ -963,14 +1139,19 @@ else:
 
                             context = ssl.create_default_context()
                             port = int(smtp_port)
+                            # Get timeout from env (default 30 seconds)
+                            timeout = get_env_int("SMTP_TIMEOUT", 30)
+                            
+                            # Set socket default timeout for better network handling
+                            socket.setdefaulttimeout(timeout)
 
                             if use_starttls:
-                                with smtplib.SMTP(smtp_server, port) as server:
+                                with smtplib.SMTP(smtp_server, port, timeout=timeout) as server:
                                     server.starttls(context=context)
                                     server.login(sender_email, sender_password)
                                     server.send_message(msg)
                             else:
-                                with smtplib.SMTP_SSL(smtp_server, port, context=context) as server:
+                                with smtplib.SMTP_SSL(smtp_server, port, context=context, timeout=timeout) as server:
                                     server.login(sender_email, sender_password)
                                     server.send_message(msg)
 
@@ -980,8 +1161,12 @@ else:
                             )
                         except FileNotFoundError:
                             st.error("Selected file could not be read. Please verify it still exists.")
-                        except smtplib.SMTPException as ex:
-                            st.error(f"Failed to send email: {str(ex)}")
+                        except (smtplib.SMTPException, OSError, TimeoutError) as ex:
+                            error_msg = str(ex)
+                            if "10060" in error_msg or "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+                                st.error(f"Connection timeout. Please check your network connection. If using WiFi, try switching to ethernet or check firewall settings. Error: {error_msg}")
+                            else:
+                                st.error(f"Failed to send email: {error_msg}")
                         except Exception as ex:
                             st.error(f"Unexpected error while sending email: {str(ex)}")
                         else:
@@ -1002,17 +1187,21 @@ else:
             st.error("Please provide both folder path and query!")
         else:
             with st.spinner("Processing..."):
+                # Check if query is a summarize request
+                intent_data = parse_query_intent(query)
+                is_summarize = intent_data["intent"] == "summarize"
+                
                 # Save input.json
                 input_data = {
                     "folder_path": folder_path,
                     "query": query,
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now().isoformat(),
+                    "intent": intent_data["intent"]
                 }
                 with open("input.json", "w") as f:
                     json.dump(input_data, f, indent=2)
                 
-                # Index documents (if not already indexed)
-                st.info("📊 Indexing documents from folder...")
+                # Index documents (will skip if already indexed)
                 db = VectorDatabaseManager()
                 docs_indexed = index_folder(folder_path, db)
                 
@@ -1031,46 +1220,223 @@ else:
                 with open("metadata.json", "w") as f:
                     json.dump(metadata, f, indent=2)
                 
-                # Execute RAG query
-                st.info("🤖 Analyzing documents with AI...")
-                rag = RAGEngine()
-                result = rag.query(query)
-                
-                # Save output.json
-                output_data = {
-                    "status": "success",
-                    "query": query,
-                    "execution_time": result.get("execution_time", 0),
-                    "results": result
-                }
-                with open("output.json", "w") as f:
-                    json.dump(output_data, f, indent=2)
-                
-                # Display results
-                st.success("✅ Analysis Complete!")
-                st.markdown("### 📊 Results")
-                
-                # Show summary
-                st.markdown("#### Summary")
-                st.write(result.get("summary", "No summary available"))
-                
-                # Show documents found
-                if result.get("documents_found"):
-                    st.markdown("#### Documents Found")
-                    for doc in result["documents_found"]:
-                        st.write(f"- {doc}")
-                
-                # Show full JSON
-                with st.expander("📄 View Full Results (JSON)"):
-                    st.json(output_data)
-                
-                # Download button
-                st.download_button(
-                    "💾 Download Results (JSON)",
-                    data=json.dumps(output_data, indent=2),
-                    file_name=f"results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                    mime="application/json"
-                )
+                if is_summarize:
+                    # Handle summarize intent
+                    document_name = intent_data.get("document_name")
+                    rag = RAGEngine()
+                    doc_ids_to_summarize = []
+                    
+                    if document_name:
+                        # User specified a document to summarize
+                        st.info(f"🔍 Searching for '{document_name}'...")
+                        results, suggestions = find_documents(folder_path, document_name)
+                        
+                        if results:
+                            # Found exact match(es)
+                            for file_path in results:
+                                # Convert file path to doc_id format
+                                doc_id = str(file_path).replace("\\", "_").replace("/", "_")
+                                # Check if this doc_id exists in the database
+                                all_doc_ids = db.get_all_document_ids()
+                                # Find matching doc_id (might have chunks)
+                                matching_ids = [did for did in all_doc_ids if doc_id in did or did in doc_id]
+                                if matching_ids:
+                                    # Use the base doc_id (without chunk suffix)
+                                    base_doc_id = doc_id
+                                    if base_doc_id not in doc_ids_to_summarize:
+                                        doc_ids_to_summarize.append(base_doc_id)
+                            
+                            if doc_ids_to_summarize:
+                                st.success(f"📎 Found {len(doc_ids_to_summarize)} document(s) to summarize")
+                            else:
+                                st.warning(f"⚠️ Found file(s) but couldn't match with database. Trying to find by filename...")
+                                # Try alternative: search by filename in doc_ids
+                                for file_path in results:
+                                    filename = file_path.name
+                                    all_doc_ids = db.get_all_document_ids()
+                                    for doc_id in all_doc_ids:
+                                        doc = db.get_document_by_id(doc_id)
+                                        if doc and doc.get("metadata"):
+                                            if doc["metadata"].get("filename") == filename:
+                                                if doc_id not in doc_ids_to_summarize:
+                                                    doc_ids_to_summarize.append(doc_id)
+                                                break
+                        elif suggestions:
+                            # Use the most similar suggestion
+                            file_path = suggestions[0][0]
+                            filename = file_path.name
+                            st.info(f"📎 Using closest match: {filename}")
+                            all_doc_ids = db.get_all_document_ids()
+                            for doc_id in all_doc_ids:
+                                doc = db.get_document_by_id(doc_id)
+                                if doc and doc.get("metadata"):
+                                    if doc["metadata"].get("filename") == filename:
+                                        doc_ids_to_summarize.append(doc_id)
+                                        break
+                        else:
+                            st.error(f"❌ Could not find document matching '{document_name}'")
+                            st.info("💡 Available documents in folder:")
+                            available_files = list_supported_files(folder_path)
+                            for idx, file_path in enumerate(available_files[:10], 1):
+                                st.write(f"{idx}. {file_path.name}")
+                    else:
+                        # No specific document mentioned - summarize all
+                        st.info("🤖 Generating summary of all documents...")
+                        all_doc_ids = db.get_all_document_ids()
+                        doc_ids_to_summarize = all_doc_ids
+                    
+                    if not doc_ids_to_summarize:
+                        st.error("No documents found in the database!")
+                        st.stop()
+                    
+                    st.info(f"📄 Analyzing {len(doc_ids_to_summarize)} document(s)...")
+                    # Summarize specified documents
+                    result = rag.summarize(doc_ids_to_summarize, summary_type="abstractive")
+                    
+                    if result.get("status") == "success":
+                        summary_title = f"Summary of {len(doc_ids_to_summarize)} Document(s)" if document_name else "Summary of All Documents"
+                        
+                        # Save output.json
+                        output_data = {
+                            "status": "success",
+                            "query": query,
+                            "intent": "summarize",
+                            "documents_analyzed": result.get("documents_analyzed", 0),
+                            "results": result
+                        }
+                        with open("output.json", "w") as f:
+                            json.dump(output_data, f, indent=2)
+                        
+                        # Display results
+                        st.success("✅ Summary Complete!")
+                        st.markdown(f"### 📊 {summary_title}")
+                        st.write(result.get("summary", "No summary available"))
+                        
+                        # Show full JSON
+                        with st.expander("📄 View Full Results (JSON)"):
+                            st.json(output_data)
+                        
+                        # Download button
+                        st.download_button(
+                            "💾 Download Results (JSON)",
+                            data=json.dumps(output_data, indent=2),
+                            file_name=f"summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                            mime="application/json"
+                        )
+                    else:
+                        st.error(f"Error generating summary: {result.get('message', 'Unknown error')}")
+                else:
+                    # Execute RAG query (default behavior)
+                    rag = RAGEngine()
+                    doc_ids_to_query = None
+                    
+                    # Check if query mentions a specific document (e.g., "explain project1.pdf" or "explain project1")
+                    query_lower = query.lower()
+                    
+                    # Pattern to match filenames (with extensions)
+                    filename_pattern = r'\b[\w\-_]+\.(pdf|docx|txt|doc)\b'
+                    filenames = re.findall(filename_pattern, query, re.IGNORECASE)
+                    
+                    # Also try to extract potential document names without extensions
+                    doc_name = None
+                    if filenames:
+                        # Found a filename with extension
+                        filename_match = re.search(r'\b([\w\-_]+\.(?:pdf|docx|txt|doc))\b', query, re.IGNORECASE)
+                        if filename_match:
+                            doc_name = filename_match.group(1)
+                    else:
+                        # Try to extract potential document name (word after common query verbs)
+                        # Remove common query words
+                        query_words = re.sub(r'\b(explain|what|is|tell|me|about|describe|show|the|a|an)\b', '', query_lower, flags=re.IGNORECASE)
+                        query_words = query_words.strip()
+                        # Take the first significant word/phrase (up to 2 words)
+                        words = query_words.split()
+                        if words:
+                            # Take first 1-2 words as potential document name
+                            potential_name = ' '.join(words[:2]).strip(' ,.')
+                            if len(potential_name) > 2:  # Only if it's a meaningful name
+                                doc_name = potential_name
+                    
+                    if doc_name:
+                        st.info(f"🔍 Searching for document: {doc_name}")
+                        
+                        # Search for the document in the folder (with fuzzy matching)
+                        results, suggestions = find_documents(folder_path, doc_name)
+                        
+                        # Use suggestions if no exact match found (handles spelling errors)
+                        if not results and suggestions:
+                            # Use the most similar suggestion (fuzzy match)
+                            file_path = suggestions[0][0]
+                            filename_only = file_path.name
+                            similarity_score = suggestions[0][1]
+                            if similarity_score >= 0.5:  # Only use if reasonably similar
+                                st.info(f"📎 Found closest match: {filename_only} (similarity: {int(similarity_score * 100)}%)")
+                                results = [file_path]
+                        
+                        if results:
+                            # Found the document, get its doc_id
+                            doc_ids_to_query = []
+                            for file_path in results:
+                                doc_id = str(file_path).replace("\\", "_").replace("/", "_")
+                                # Check if this doc_id exists in the database
+                                all_doc_ids = db.get_all_document_ids()
+                                # Find matching doc_id
+                                matching_ids = [did for did in all_doc_ids if doc_id == did or did.startswith(doc_id + "_chunk")]
+                                if matching_ids:
+                                    # Use the base doc_id (without chunk suffix)
+                                    base_doc_id = doc_id
+                                    if base_doc_id not in doc_ids_to_query:
+                                        doc_ids_to_query.append(base_doc_id)
+                            
+                            if not doc_ids_to_query:
+                                # Try alternative: search by filename in doc_ids
+                                for file_path in results:
+                                    filename_only = file_path.name
+                                    all_doc_ids = db.get_all_document_ids()
+                                    for doc_id in all_doc_ids:
+                                        doc = db.get_document_by_id(doc_id)
+                                        if doc and doc.get("metadata"):
+                                            if doc["metadata"].get("filename") == filename_only:
+                                                if doc_id not in doc_ids_to_query:
+                                                    doc_ids_to_query.append(doc_id)
+                                                break
+                            
+                            if doc_ids_to_query:
+                                st.success(f"📎 Using document: {results[0].name}")
+                    
+                    st.info("🤖 Analyzing documents with AI...")
+                    result = rag.query(query, document_ids=doc_ids_to_query)
+                    
+                    # Save output.json
+                    output_data = {
+                        "status": "success",
+                        "query": query,
+                        "execution_time": result.get("execution_time", 0),
+                        "results": result
+                    }
+                    with open("output.json", "w") as f:
+                        json.dump(output_data, f, indent=2)
+                    
+                    # Display results
+                    st.success("✅ Analysis Complete!")
+                    st.markdown("### 📊 Results")
+                    
+                    # Show summary
+                    st.markdown("#### Summary")
+                    st.write(result.get("summary", "No summary available"))
+                    
+                    
+                    # Show full JSON
+                    with st.expander("📄 View Full Results (JSON)"):
+                        st.json(output_data)
+                    
+                    # Download button
+                    st.download_button(
+                        "💾 Download Results (JSON)",
+                        data=json.dumps(output_data, indent=2),
+                        file_name=f"results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                        mime="application/json"
+                    )
 
 # Sidebar with info
 with st.sidebar:

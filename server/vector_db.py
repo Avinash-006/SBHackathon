@@ -162,6 +162,51 @@ class VectorDatabaseManager:
         except Exception as e:
             print(f"Error clearing collection: {e}")
     
+    def get_all_document_ids(self) -> List[str]:
+        """Get all unique document IDs from the collection"""
+        if self.collection.count() == 0:
+            return []
+        
+        # Get all items from collection
+        all_items = self.collection.get()
+        metadatas = all_items.get("metadatas", [])
+        
+        # Extract unique doc_ids
+        doc_ids = set()
+        for metadata in metadatas:
+            doc_id = metadata.get("doc_id")
+            if doc_id:
+                doc_ids.add(doc_id)
+        
+        return list(doc_ids)
+    
+    def search_by_filename(self, filename: str) -> List[Dict]:
+        """Search for documents by filename (exact or partial match)"""
+        if self.collection.count() == 0:
+            return []
+        
+        # Get all items from collection
+        all_items = self.collection.get()
+        documents = all_items.get("documents", [])
+        metadatas = all_items.get("metadatas", [])
+        ids = all_items.get("ids", [])
+        
+        filename_lower = filename.lower()
+        matching_docs = []
+        
+        for doc, meta, doc_id in zip(documents, metadatas, ids):
+            meta_filename = meta.get("filename", "").lower()
+            if filename_lower in meta_filename or meta_filename in filename_lower:
+                matching_docs.append({
+                    "text": doc,
+                    "source": meta.get("source", "unknown"),
+                    "filename": meta.get("filename", "unknown"),
+                    "metadata": meta,
+                    "distance": 0.0  # Exact match
+                })
+        
+        return matching_docs
+    
     def get_stats(self) -> Dict:
         """Get statistics about the collection"""
         count = self.collection.count()

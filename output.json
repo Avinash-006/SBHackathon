@@ -1,58 +1,27 @@
 {
   "status": "success",
-  "query": "explain lab 14",
-  "execution_time": 2.6,
+  "query": "explain job evaluation",
+  "execution_time": 4.2,
   "results": {
-    "query": "explain lab 14",
+    "query": "explain job evaluation",
     "documents_found": [
-      "LAB-7.docx",
-      "CICD-LAB-1.pdf",
-      "top_level.txt",
-      "README.txt",
-      "vendor.txt"
+      "06_job_evaluation_policy.pdf"
     ],
-    "summary": "I cannot explain lab 14 as there is no information about it in the provided documents. The documents mention \"LAB-7\" (Document 2) and \"Lab \u2013 1\" (Document 5), but nothing about lab 14.",
+    "summary": "Job evaluation, as outlined in Human Resources Policy 06 \u2013 Job Evaluation [Document 1], is the process of evaluating and classifying work assignments for both bargaining unit and excluded positions.\n\nKey aspects of job evaluation include:\n*   **Purpose**: To ensure that all work assignments are evaluated and assigned a classification consistent with the applicable job evaluation plan [Document 1].\n*   **Administration**: The BC Public Service Agency is responsible for administering all job evaluation plans [Document 1].\n*   **Requirements for Evaluation**: A \"statement of job responsibilities\" is required for a work assignment to be evaluated. This statement must contain sufficient information for classification, including key accountabilities and organizational context. It must accurately reflect the actual job, be signed by the accountable excluded manager, and indicate the effective date [Document 1].\n*   **Classification Approval**: Classification decisions must be approved by a classification authority within the BC Public Service Agency, unless the Agency Head provides formal written delegation [Document 1].\n*   **Impact on Compensation**: An approved classification is mandatory before offering a salary, and all compensation decisions must align with the relevant contract of employment, legislation, and job evaluation plan [Document 1].\n*   **Job Evaluation Plans**: Examples of plans mentioned include the Management Compensation and Classification Framework (MCCF), Public Service Nurse Classification Plan (PSNCP), Professional Employees Association plans (Licensed Science Officer Plan, Grade Descriptors), Public Service Job Evaluation Plan (PSJEP), and other grade descriptors for specific roles like legal counsel or senior executive assistants [Document 1].",
     "retrieved_documents": [
       {
-        "text": "# parsing/tests/test_autolev.py uses the .al files in this directory as inputs and checks\n# the equivalence of the parser generated codes and the respective .py files.\n\n# By default, this directory contains tests for all rules of the parser.\n\n# Additional tests consisting of full physics examples shall be made available soon in\n# the form of another repository. One shall be able to copy the contents of that repo\n# to this folder and use those tests after uncommenting the respective code in\n# parsing/tests/test_autolev.py.\n",
-        "source": "C:\\users\\Avinash\\Videos\\skil\\Project\\.venv\\Lib\\site-packages\\sympy\\parsing\\autolev\\test-examples\\README.txt",
-        "filename": "README.txt",
+        "text": "1 \n \nHuman Resources Policy 06 \u2013 Job Evaluation   \nLast updated: February 22, 2017  \n \nThis policy statement covers the evaluation and classification of bargaining unit and \nexcluded work assignments. The policy statement supports the core policy objective of \nensuring that \u201cgovernment is supported by a professional public service that has the \nknowledge, skills and abilities to achieve current and future objectives.\u201d   \n \nAll work assignments are evaluated and assigned a classification consistent with the \napplicable job evaluation plan. The BC Public Service Agency administers all job evaluation \nplans. \n \nStatement of Job Responsibilities   \nFor a work assignment to be evaluated, a statement of job responsibilities is required. The \nstatement of job responsibilities must contain sufficient information to allow the work \nassignment to be classified using the criteria set out in the applicable evaluation plan, \nincluding, but not limited to:   \n \n\u2022 Key accountabilities; and\nsufficient information to allow the work \nassignment to be classified using the criteria set out in the applicable evaluation plan, \nincluding, but not limited to:   \n \n\u2022 Key accountabilities; and   \n\u2022 Organizational context.   \n \nThe statement of job responsibilities must accurately reflect the actual job responsibilities \nof the position and be signed by the appropriate excluded manager who is accountable \nfor the work. The date the work assignment comes into effect must be indicated.   \n \nThe statement of job responsibilities must be submitted for evaluation and assigned a \nclassification. Classification decisions must be approved by a classification authority within \nthe BC Public Service Agency, unless formal written delegation has been provided by the \nAgency Head.   \n \nAll work assignments must have an approved classification before offering a salary and all \ncompensation decisions must comply with the applicable contract of employment, \nlegislation and job evaluation plan.\nignments must have an approved classification before offering a salary and all \ncompensation decisions must comply with the applicable contract of employment, \nlegislation and job evaluation plan.   \n \n  \n2 \n \nJob Evaluation Plans   \n\u2022 Management Compensation and Classification Framework (MCCF);   \n\u2022 Public Service Nurse Classification Plan (PSNCP);   \n\u2022 Professional Employees Association;   \no Licensed Science Officer (LSO) Plan;   \no Grade Descriptors for Positions Other Than Licensed Science Officers;   \n\u2022 Public Service Job Evaluation Plan (PSJEP); and   \n\u2022 Other grade descriptors for;   \no Legal counsel;  \no Salaried physicians;   \no Senior executive assistants; and   \no Executive/judicial administrative assistants.",
+        "filename": "06_job_evaluation_policy.pdf",
+        "source": "C:\\Users\\Avinash\\Pictures\\06_job_evaluation_policy\\06_job_evaluation_policy.pdf",
         "metadata": {
-          "chunk_index": 0,
-          "doc_id": "C:_users_Avinash_Videos_skil_Project_.venv_Lib_site-packages_sympy_parsing_autolev_test-examples_README.txt",
-          "filename": "README.txt",
-          "source": "C:\\users\\Avinash\\Videos\\skil\\Project\\.venv\\Lib\\site-packages\\sympy\\parsing\\autolev\\test-examples\\README.txt",
-          "type": "txt"
-        },
-        "distance": 0.7141826152801514
-      },
-      {
-        "text": "CI/CD DevOps\n\n\n\nLAB-7\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
-        "source": "C:\\Users\\Avinash\\Desktop\\cicd labs\\LAB-7.docx",
-        "filename": "LAB-7.docx",
-        "metadata": {
-          "doc_id": "C:_Users_Avinash_Desktop_cicd labs_LAB-7.docx",
-          "chunk_index": 0,
-          "source": "C:\\Users\\Avinash\\Desktop\\cicd labs\\LAB-7.docx",
-          "type": "docx",
-          "filename": "LAB-7.docx"
-        },
-        "distance": 0.7333243489265442
-      },
-      {
-        "text": "packaging==24.0\n",
-        "source": "C:\\users\\Avinash\\Videos\\skil\\Project\\.venv\\Lib\\site-packages\\setuptools\\_vendor\\wheel\\vendored\\vendor.txt",
-        "filename": "vendor.txt",
-        "metadata": {
-          "chunk_index": 0,
-          "source": "C:\\users\\Avinash\\Videos\\skil\\Project\\.venv\\Lib\\site-packages\\setuptools\\_vendor\\wheel\\vendored\\vendor.txt",
-          "doc_id": "C:_users_Avinash_Videos_skil_Project_.venv_Lib_site-packages_setuptools__vendor_wheel_vendored_vendor.txt",
-          "filename": "vendor.txt",
-          "type": "txt"
-        },
-        "distance": 0.7456337213516235
+          "doc_id": "C:_Users_Avinash_Pictures_06_job_evaluation_policy_06_job_evaluation_policy.pdf",
+          "source": "C:\\Users\\Avinash\\Pictures\\06_job_evaluation_policy\\06_job_evaluation_policy.pdf",
+          "type": "pdf",
+          "filename": "06_job_evaluation_policy.pdf",
+          "chunk_index": 0
+        }
       }
     ],
-    "execution_time": 2.6
+    "execution_time": 4.2
   }
 }
