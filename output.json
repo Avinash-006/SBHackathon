@@ -1,0 +1,58 @@
+{
+  "status": "success",
+  "query": "explain lab 14",
+  "execution_time": 2.6,
+  "results": {
+    "query": "explain lab 14",
+    "documents_found": [
+      "LAB-7.docx",
+      "CICD-LAB-1.pdf",
+      "top_level.txt",
+      "README.txt",
+      "vendor.txt"
+    ],
+    "summary": "I cannot explain lab 14 as there is no information about it in the provided documents. The documents mention \"LAB-7\" (Document 2) and \"Lab \u2013 1\" (Document 5), but nothing about lab 14.",
+    "retrieved_documents": [
+      {
+        "text": "# parsing/tests/test_autolev.py uses the .al files in this directory as inputs and checks\n# the equivalence of the parser generated codes and the respective .py files.\n\n# By default, this directory contains tests for all rules of the parser.\n\n# Additional tests consisting of full physics examples shall be made available soon in\n# the form of another repository. One shall be able to copy the contents of that repo\n# to this folder and use those tests after uncommenting the respective code in\n# parsing/tests/test_autolev.py.\n",
+        "source": "C:\\users\\Avinash\\Videos\\skil\\Project\\.venv\\Lib\\site-packages\\sympy\\parsing\\autolev\\test-examples\\README.txt",
+        "filename": "README.txt",
+        "metadata": {
+          "chunk_index": 0,
+          "doc_id": "C:_users_Avinash_Videos_skil_Project_.venv_Lib_site-packages_sympy_parsing_autolev_test-examples_README.txt",
+          "filename": "README.txt",
+          "source": "C:\\users\\Avinash\\Videos\\skil\\Project\\.venv\\Lib\\site-packages\\sympy\\parsing\\autolev\\test-examples\\README.txt",
+          "type": "txt"
+        },
+        "distance": 0.7141826152801514
+      },
+      {
+        "text": "CI/CD DevOps\n\n\n\nLAB-7\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+        "source": "C:\\Users\\Avinash\\Desktop\\cicd labs\\LAB-7.docx",
+        "filename": "LAB-7.docx",
+        "metadata": {
+          "doc_id": "C:_Users_Avinash_Desktop_cicd labs_LAB-7.docx",
+          "chunk_index": 0,
+          "source": "C:\\Users\\Avinash\\Desktop\\cicd labs\\LAB-7.docx",
+          "type": "docx",
+          "filename": "LAB-7.docx"
+        },
+        "distance": 0.7333243489265442
+      },
+      {
+        "text": "packaging==24.0\n",
+        "source": "C:\\users\\Avinash\\Videos\\skil\\Project\\.venv\\Lib\\site-packages\\setuptools\\_vendor\\wheel\\vendored\\vendor.txt",
+        "filename": "vendor.txt",
+        "metadata": {
+          "chunk_index": 0,
+          "source": "C:\\users\\Avinash\\Videos\\skil\\Project\\.venv\\Lib\\site-packages\\setuptools\\_vendor\\wheel\\vendored\\vendor.txt",
+          "doc_id": "C:_users_Avinash_Videos_skil_Project_.venv_Lib_site-packages_setuptools__vendor_wheel_vendored_vendor.txt",
+          "filename": "vendor.txt",
+          "type": "txt"
+        },
+        "distance": 0.7456337213516235
+      }
+    ],
+    "execution_time": 2.6
+  }
+}
